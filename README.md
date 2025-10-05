@@ -58,7 +58,7 @@ flow = AgentFlow(
 flow.run(ledger={})
 # Output: Final result: 15
 
-🏗️ Core Concepts
+### 🏗️ Core Concepts
 The Ledger Pattern
 FireAnt uses a shared ledger (dictionary) that flows through your agent pipeline. Each agent reads from it, processes data, and writes back to it—accumulating context as it goes.
 
@@ -66,8 +66,8 @@ ledger = {}
 agent1.run(ledger)  # ledger now has agent1's outputs
 agent2.run(ledger)  # agent2 sees agent1's results + adds its own
 
-Agent Chaining
-Build sequential pipelines by chaining agents:
+## Agent Chaining
+## Build sequential pipelines by chaining agents:
 
 workflow = (
     FetchAgent()
