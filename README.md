@@ -4,6 +4,8 @@
 
 Like fire ants combining to float on water or defend against threats, FireAnt enables simple agents to work together and accomplish complex tasks through emergent collaboration.
 
+<img width="1880" height="902" alt="CleanShot 2025-10-05 at 12 44 13@2x" src="https://github.com/user-attachments/assets/e3ebf906-00fa-4c4c-b399-2fd6db4081a2" />
+
 ---
 
 ## 🔥 Why FireAnt?
