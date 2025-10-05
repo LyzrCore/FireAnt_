@@ -57,28 +57,34 @@ flow = AgentFlow(
 # Run the workflow
 flow.run(ledger={})
 # Output: Final result: 15
+```
 
 ### 🏗️ Core Concepts
 The Ledger Pattern
 FireAnt uses a shared ledger (dictionary) that flows through your agent pipeline. Each agent reads from it, processes data, and writes back to it—accumulating context as it goes.
 
+```python
 ledger = {}
 agent1.run(ledger)  # ledger now has agent1's outputs
 agent2.run(ledger)  # agent2 sees agent1's results + adds its own
+```
 
-## Agent Chaining
-## Build sequential pipelines by chaining agents:
+### Agent Chaining
+Build sequential pipelines by chaining agents:
 
+```python
 workflow = (
     FetchAgent()
     .next(ValidateAgent())
     .next(TransformAgent())
     .next(SaveAgent())
 )
+```
 
-Task Delegation
+### Task Delegation
 Use ManagerAgent to delegate work to a pool of specialized workers:
 
+```python
 manager = ManagerAgent()
 manager.add_worker("data_processing", DataWorker())
 manager.add_worker("validation", ValidationWorker())
@@ -87,10 +93,12 @@ manager.assign_task("data_processing", {"file": "data.csv"}, priority=2)
 manager.assign_task("validation", {"schema": "user"}, priority=1)
 
 manager.process_tasks(ledger)  # Executes by priority
+```
 
-Event-Driven Communication
+### Event-Driven Communication
 Decouple agents using the event bus:
 
+```python
 class TriggerAgent(EventAgent):
     def execute(self, inputs):
         self.publish("data_ready", {"dataset": "users"})
@@ -106,22 +114,23 @@ trigger = TriggerAgent()
 trigger.event_bus.subscribe("data_ready", listener)
 
 trigger.run({})  # ListenerAgent automatically runs when event fires
+```
 
-📦 Installation
-
+## 📦 Installation
+```python
 # Clone the repository
 git clone https://github.com/yourusername/fireant.git
 cd fireant
 
 # FireAnt has zero dependencies - just copy fireant.py to your project!
-cp fireant.py your_project/
+cp fireant.py your_project/```
 
 Or install via pip (coming soon):
-
+```python
 pip install fireant
-
-💡 Real-World Example: Building a Web Scraper
-
+```
+## 💡 Real-World Example: Building a Web Scraper
+```python
 class URLFetcher(Agent):
     def execute(self, inputs):
         url = inputs.get("url")
@@ -162,8 +171,8 @@ scraper = AgentFlow(
 )
 
 scraper.run({"url": "https://example.com"})
-
-🎯 Use Cases
+```
+## 🎯 Use Cases
 
 LLM Agent Orchestration: Build complex AI agent systems where each agent has a specific role
 Data Pipelines: Create ETL workflows with clear separation of concerns
@@ -171,7 +180,7 @@ Workflow Automation: Automate business processes with traceable, debuggable flow
 Microservice Coordination: Orchestrate service calls in a clean, maintainable way
 Event-Driven Systems: Build reactive applications with loose coupling
 
-🧬 Philosophy
+## 🧬 Philosophy
 FireAnt embraces the Unix philosophy for agent systems:
 
 Each agent does one thing well
@@ -180,13 +189,13 @@ The ledger is a universal interface
 
 Just like fire ants achieve remarkable feats through simple individual behaviors and effective collaboration, FireAnt agents combine to solve complex problems through clear composition patterns.
 
-🤝 Contributing
+## 🤝 Contributing
 Contributions are welcome! FireAnt is intentionally minimal, but improvements to the core patterns, bug fixes, and documentation are always appreciated.
-
+```bash
 # Fork the repo, create a branch, make your changes
 git checkout -b feature/amazing-feature
 git commit -m "Add amazing feature"
 git push origin feature/amazing-feature
 # Open a Pull Request
-
+```
 Built for the age of LLM-powered development. 85 lines. Infinite possibilities.
