@@ -59,7 +59,7 @@ flow.run(ledger={})
 # Output: Final result: 15
 ```
 
-### 🏗️ Core Concepts
+## 🏗️ Core Concepts
 The Ledger Pattern
 FireAnt uses a shared ledger (dictionary) that flows through your agent pipeline. Each agent reads from it, processes data, and writes back to it—accumulating context as it goes.
 
