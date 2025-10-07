@@ -1,4 +1,4 @@
-# FireAnt 🐜🔥
+# Lyzr FireAnt 🐜🔥
 
 **A minimal, powerful agent orchestration framework in just 85 lines of code.**
 
