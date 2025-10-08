@@ -11,7 +11,7 @@ from pathlib import Path
 def run_example(example_name: str, example_path: Path):
     """Run a single example and handle errors gracefully."""
     print(f"\n{'='*60}")
-    print(f"🚀 Running {example_name}")
+    print(f"Running {example_name}")
     print(f"{'='*60}")
     
     try:
@@ -20,16 +20,16 @@ def run_example(example_name: str, example_path: Path):
         if hasattr(spec, 'main'):
             spec.main()
         else:
-            print(f"⚠️ No main() function found in {example_name}")
+            print(f"Warning: No main() function found in {example_name}")
         
-        print(f"✅ {example_name} completed successfully!")
+        print(f"SUCCESS: {example_name} completed successfully!")
         return True
         
     except ImportError as e:
-        print(f"❌ Failed to import {example_name}: {e}")
+        print(f"ERROR: Failed to import {example_name}: {e}")
         return False
     except Exception as e:
-        print(f"❌ {example_name} failed with error:")
+        print(f"ERROR: {example_name} failed with error:")
         print(f"   {e}")
         if "--verbose" in sys.argv:
             print(f"   Traceback:")
@@ -39,7 +39,7 @@ def run_example(example_name: str, example_path: Path):
 
 def main():
     """Run all examples."""
-    print("🔥 FireAnt Examples Runner")
+    print("FireAnt Examples Runner")
     print("This will run all examples demonstrating FireAnt's features.")
     
     # List of examples to run
@@ -57,7 +57,7 @@ def main():
     # Check if examples directory exists
     examples_dir = Path(__file__).parent
     if not examples_dir.exists():
-        print(f"❌ Examples directory not found: {examples_dir}")
+        print(f"ERROR: Examples directory not found: {examples_dir}")
         return 1
     
     # Change to examples directory
@@ -72,12 +72,12 @@ def main():
             if example_path.exists():
                 results[name] = run_example(name, example_path)
             else:
-                print(f"⚠️ Example file not found: {example_path}")
+                print(f"Warning: Example file not found: {example_path}")
                 results[name] = False
         
         # Print summary
         print(f"\n{'='*60}")
-        print("📊 EXAMPLES SUMMARY")
+        print("EXAMPLES SUMMARY")
         print(f"{'='*60}")
         
         total = len(results)
@@ -85,16 +85,16 @@ def main():
         failed = total - successful
         
         for name, success in results.items():
-            status = "✅ PASSED" if success else "❌ FAILED"
+            status = "PASSED" if success else "FAILED"
             print(f"   {name}: {status}")
         
         print(f"\nTotal: {total}, Successful: {successful}, Failed: {failed}")
         
         if failed > 0:
-            print(f"\n⚠️ {failed} example(s) failed. Run with --verbose for details.")
+            print(f"\nWarning: {failed} example(s) failed. Run with --verbose for details.")
             return 1
         else:
-            print(f"\n🎉 All examples completed successfully!")
+            print(f"\nSUCCESS: All examples completed successfully!")
             return 0
             
     finally:

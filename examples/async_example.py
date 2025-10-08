@@ -40,7 +40,7 @@ class AsyncDataFetcher(AsyncAgent):
     
     async def execute(self, inputs):
         """Fetch data from all sources concurrently."""
-        print(f"🔄 {self.name}: Fetching data from {len(self.sources)} sources...")
+        print(f"Processing {self.name}: Fetching data from {len(self.sources)} sources...")
         
         # Fetch from all sources concurrently
         tasks = [self.fetch_from_source(source) for source in self.sources]
@@ -115,7 +115,7 @@ class AsyncDataProcessor(AsyncAgent):
             for i in range(0, len(data), self.batch_size)
         ]
         
-        print(f"🔄 {self.name}: Processing {len(data)} items in {len(batches)} batches...")
+        print(f"Processing {self.name}: Processing {len(data)} items in {len(batches)} batches...")
         
         # Process batches concurrently
         tasks = [
@@ -190,7 +190,7 @@ class AsyncDataAnalyzer(AsyncAgent):
         """Perform comprehensive data analysis."""
         data = inputs.get("processed_data", [])
         
-        print(f"🔄 {self.name}: Analyzing {len(data)} data points...")
+        print(f"Processing {self.name}: Analyzing {len(data)} data points...")
         
         # Run analysis tasks concurrently
         stats_task = self.calculate_statistics(data)
@@ -247,7 +247,7 @@ class AsyncReportGenerator(AsyncAgent):
         """Generate and print the final report."""
         analysis_data = inputs.get("analysis_data", {})
         
-        print(f"🔄 {self.name}: Generating report...")
+        print(f"Processing {self.name}: Generating report...")
         
         report = await self.generate_report(analysis_data)
         
@@ -344,7 +344,7 @@ async def demonstrate_circuit_breaker():
         
         async def execute(self, inputs):
             self.call_count += 1
-            print(f"🔄 {self.name} call #{self.call_count}")
+            print(f"Processing {self.name} call #{self.call_count}")
             
             await asyncio.sleep(0.1)
             
@@ -428,7 +428,7 @@ async def demonstrate_mixed_sync_async():
         enable_monitoring=True
     )
     
-    print("🔄 Running mixed sync/async flow...")
+    print("Running mixed sync/async flow...")
     try:
         result = await flow.run({})
         print("✅ Mixed flow completed successfully")
@@ -438,7 +438,7 @@ async def demonstrate_mixed_sync_async():
 
 async def main():
     """Run all async demonstrations."""
-    print("🔥 FireAnt Async Examples")
+    print("FireAnt Async Examples")
     print("=" * 50)
     
     # Set random seed for reproducible results

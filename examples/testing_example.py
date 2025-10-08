@@ -110,12 +110,12 @@ def demonstrate_basic_testing():
     )
     
     result = harness.run_agent_test(success_agent, {"test_input": "data"})
-    print(f"   Result: {'✅ PASSED' if result.success else '❌ FAILED'}")
+    print(f"   Result: {'PASSED' if result.success else 'FAILED'}")
     print(f"   Execution time: {result.execution_time:.3f}s")
     print(f"   Output: {result.output}")
     
     # Test 2: Failing agent
-    print("\n🧪 Test 2: Failing agent")
+    print("\nTest 2: Failing agent")
     fail_agent = MockAgent(
         name="FailAgent",
         should_fail=True,
@@ -123,11 +123,11 @@ def demonstrate_basic_testing():
     )
     
     result = harness.run_agent_test(fail_agent, {"test_input": "data"})
-    print(f"   Result: {'✅ PASSED (expected failure)' if not result.success else '❌ FAILED'}")
+    print(f"   Result: {'PASSED (expected failure)' if not result.success else 'FAILED'}")
     print(f"   Error: {result.error}")
     
     # Test 3: Agent with retry
-    print("\n🧪 Test 3: Agent with retry")
+    print("\nTest 3: Agent with retry")
     retry_agent = MockAgent(
         name="RetryAgent",
         should_fail=True,
@@ -136,7 +136,7 @@ def demonstrate_basic_testing():
     retry_agent.retry_policy = RetryPolicy(max_attempts=2, delay=0.05)
     
     result = harness.run_agent_test(retry_agent, {"test_input": "data"})
-    print(f"   Result: {'✅ PASSED (expected failure after retry)' if not result.success else '❌ FAILED'}")
+    print(f"   Result: {'PASSED (expected failure after retry)' if not result.success else 'FAILED'}")
     print(f"   Retry attempts: {len([h for h in retry_agent.execution_history if h.get('status') == 'retry'])}")
 
 
@@ -155,10 +155,10 @@ def demonstrate_flow_testing():
         enable_monitoring=True
     )
     
-    print("🧪 Testing multi-agent flow")
+    print("Testing multi-agent flow")
     result = harness.run_flow_test(flow, {"flow_input": "test"})
     
-    print(f"   Result: {'✅ PASSED' if result.success else '❌ FAILED'}")
+    print(f"   Result: {'PASSED' if result.success else 'FAILED'}")
     print(f"   Execution time: {result.execution_time:.3f}s")
     
     if result.metrics:
@@ -175,7 +175,7 @@ def demonstrate_async_testing():
         harness = AgentTestHarness(enable_monitoring=True)
         
         # Test async agent
-        print("🧪 Testing async agent")
+        print("Testing async agent")
         async_agent = AsyncMockAgent(
             name="AsyncAgent",
             delay=0.1,
@@ -184,12 +184,12 @@ def demonstrate_async_testing():
         
         result = await harness.run_async_agent_test(async_agent, {"async_input": "data"})
         
-        print(f"   Result: {'✅ PASSED' if result.success else '❌ FAILED'}")
+        print(f"   Result: {'PASSED' if result.success else 'FAILED'}")
         print(f"   Execution time: {result.execution_time:.3f}s")
         print(f"   Output: {result.output}")
         
         # Test async flow
-        print("\n🧪 Testing async flow")
+        print("\nTesting async flow")
         async_flow = create_async_test_flow(
             AsyncMockAgent(name="AsyncAgent1", delay=0.05),
             AsyncMockAgent(name="AsyncAgent2", delay=0.05),
@@ -198,7 +198,7 @@ def demonstrate_async_testing():
         
         flow_result = await harness.run_async_flow_test(async_flow, {"flow_input": "test"})
         
-        print(f"   Result: {'✅ PASSED' if flow_result.success else '❌ FAILED'}")
+        print(f"   Result: {'PASSED' if flow_result.success else 'FAILED'}")
         print(f"   Execution time: {flow_result.execution_time:.3f}s")
     
     # Run async tests
@@ -239,29 +239,29 @@ def demonstrate_assertions():
     harness = AgentTestHarness()
     
     # Test success assertion
-    print("🧪 Testing success assertion")
+    print("Testing success assertion")
     success_agent = MockAgent(name="SuccessAgent")
     result = harness.run_agent_test(success_agent)
     
     try:
         assert_agent_success(result)
-        print("   ✅ Success assertion passed")
+        print("   SUCCESS: Success assertion passed")
     except AssertionError as e:
-        print(f"   ❌ Success assertion failed: {e}")
+        print(f"   ERROR: Success assertion failed: {e}")
     
     # Test failure assertion
-    print("\n🧪 Testing failure assertion")
+    print("\nTesting failure assertion")
     fail_agent = MockAgent(name="FailAgent", should_fail=True)
     fail_result = harness.run_agent_test(fail_agent)
     
     try:
         assert_agent_failure(fail_result)
-        print("   ✅ Failure assertion passed")
+        print("   SUCCESS: Failure assertion passed")
     except AssertionError as e:
-        print(f"   ❌ Failure assertion failed: {e}")
+        print(f"   ERROR: Failure assertion failed: {e}")
     
     # Test output assertion
-    print("\n🧪 Testing output assertion")
+    print("\nTesting output assertion")
     output_agent = MockAgent(
         name="OutputAgent",
         output_data={"key": "value", "number": 42}
@@ -270,20 +270,20 @@ def demonstrate_assertions():
     
     try:
         assert_output_contains(output_result, "key", "value")
-        print("   ✅ Output assertion passed")
+        print("   SUCCESS: Output assertion passed")
     except AssertionError as e:
-        print(f"   ❌ Output assertion failed: {e}")
+        print(f"   ERROR: Output assertion failed: {e}")
     
     # Test execution time assertion
-    print("\n🧪 Testing execution time assertion")
+    print("\nTesting execution time assertion")
     fast_agent = MockAgent(name="FastAgent")
     time_result = harness.run_agent_test(fast_agent)
     
     try:
         assert_execution_time_below(time_result, 1.0)
-        print("   ✅ Execution time assertion passed")
+        print("   SUCCESS: Execution time assertion passed")
     except AssertionError as e:
-        print(f"   ❌ Execution time assertion failed: {e}")
+        print(f"   ERROR: Execution time assertion failed: {e}")
 
 
 def demonstrate_performance_profiling():
@@ -312,14 +312,14 @@ def demonstrate_performance_profiling():
     # Get performance summary
     summary = profiler.get_summary()
     
-    print(f"📊 Performance Summary:")
+    print(f"Performance Summary:")
     print(f"   Total profiles: {summary['total_profiles']}")
     print(f"   Total time: {summary['total_time']:.3f}s")
     print(f"   Average time: {summary['average_time']:.3f}s")
     print(f"   Max time: {summary['max_time']:.3f}s")
     print(f"   Min time: {summary['min_time']:.3f}s")
     
-    print(f"\n📈 Individual Profiles:")
+    print(f"\nIndividual Profiles:")
     for profile in summary['profiles']:
         print(f"   {profile['name']}: {profile['execution_time']:.3f}s")
 
