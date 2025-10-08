@@ -1,20 +1,25 @@
 """
-Core FireAnt agent orchestration framework.
+FireAnt async core module.
 
-This module provides the fundamental building blocks for creating and managing
-agent-based workflows with support for chaining, error handling, and monitoring.
+This module provides asynchronous versions of Agent and AgentFlow for improved
+performance with I/O-bound operations. It includes concurrent execution,
+async retry policies, and circuit breaker patterns.
 """
 
-from typing import Any, Callable, Dict, List, Optional, Union, Tuple
+import asyncio
 import time
 import traceback
+from typing import Any, Callable, Dict, List, Optional, Union, Tuple, TYPE_CHECKING
 from enum import Enum
 from .monitoring import MonitoringMixin, FireAntLogger, MetricsCollector, AgentMetric, FlowMetric, PerformanceProfiler
 from .persistence import StateManager, get_default_state_manager
 
+if TYPE_CHECKING:
+    from .core import EventBus
 
-class AgentStatus(Enum):
-    """Enumeration of possible agent execution states."""
+
+class AsyncAgentStatus(Enum):
+    """Enumeration of possible async agent execution states."""
     PENDING = "pending"
     RUNNING = "running"
     SUCCESS = "success"
@@ -22,8 +27,8 @@ class AgentStatus(Enum):
     RETRYING = "retrying"
 
 
-class AgentError(Exception):
-    """Custom exception for agent-related errors.
+class AsyncAgentError(Exception):
+    """Custom exception for async agent-related errors.
 
     Args:
         message: Error message describing what went wrong
@@ -37,8 +42,8 @@ class AgentError(Exception):
         self.original_error = original_error
 
 
-class RetryPolicy:
-    """Configuration for retry behavior in case of failures.
+class AsyncRetryPolicy:
+    """Configuration for async retry behavior in case of failures.
 
     Args:
         max_attempts: Maximum number of retry attempts (default: 3)
@@ -60,78 +65,102 @@ class RetryPolicy:
         self.exceptions = exceptions
 
 
-class Agent(MonitoringMixin):
-    """Base class for all FireAnt agents.
+class AsyncCircuitBreaker:
+    """Circuit breaker for async operations to prevent cascade failures.
 
-    Agents are the fundamental units of work in FireAnt. They process inputs
-    and produce outputs, with support for chaining, error handling, and monitoring.
+    The circuit breaker has three states:
+    - CLOSED: Normal operation, requests pass through
+    - OPEN: Failure threshold exceeded, requests are blocked
+    - HALF_OPEN: Testing if service has recovered
 
     Args:
-        name: Optional name for the agent (defaults to class name)
-        retry_policy: Configuration for retry behavior on failures
-        error_handler: Custom error handling function
-        enable_monitoring: Whether to enable performance monitoring
-        enable_persistence: Whether to enable state persistence
-        state_manager: Custom state manager instance
+        failure_threshold: Number of failures before opening circuit (default: 5)
+        recovery_timeout: Time in seconds to wait before trying recovery (default: 60.0)
     """
 
-    def __init__(
-        self,
-        name: Optional[str] = None,
-        retry_policy: Optional[RetryPolicy] = None,
-        error_handler: Optional[Callable[[Exception, 'Agent', Dict[str, Any]], None]] = None,
-        enable_monitoring: bool = True,
-        enable_persistence: bool = False,
-        state_manager: Optional[StateManager] = None
-    ) -> None:
+    def __init__(self, failure_threshold: int = 5, recovery_timeout: float = 60.0) -> None:
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.failure_count = 0
+        self.last_failure_time: Optional[float] = None
+        self.state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
+        self._lock = asyncio.Lock()
+
+    async def call(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
+        """Execute function through circuit breaker.
+
+        Args:
+            func: The async function to execute
+            *args: Positional arguments for the function
+            **kwargs: Keyword arguments for the function
+
+        Returns:
+            The result of the function call
+
+        Raises:
+            AsyncAgentError: If circuit is OPEN
+            Original exception: If function fails
+        """
+        async with self._lock:
+            if self.state == "OPEN":
+                if time.time() - (self.last_failure_time or 0) > self.recovery_timeout:
+                    self.state = "HALF_OPEN"
+                else:
+                    raise AsyncAgentError("Circuit breaker is OPEN", "AsyncCircuitBreaker")
+
+            try:
+                if asyncio.iscoroutinefunction(func):
+                    result = await func(*args, **kwargs)
+                else:
+                    result = func(*args, **kwargs)
+
+                if self.state == "HALF_OPEN":
+                    self.state = "CLOSED"
+                    self.failure_count = 0
+                return result
+            except Exception as e:
+                self.failure_count += 1
+                self.last_failure_time = time.time()
+
+                if self.failure_count >= self.failure_threshold:
+                    self.state = "OPEN"
+
+                raise e
+
+
+class AsyncAgent(MonitoringMixin):
+    def __init__(self, name=None, retry_policy: Optional[AsyncRetryPolicy] = None,
+                 error_handler: Optional[Callable] = None, enable_monitoring: bool = True,
+                 enable_persistence: bool = False, state_manager: Optional[StateManager] = None):
         self.name = name or self.__class__.__name__
-        self._next: List['Agent'] = []
-        self._event_bus: Optional['EventBus'] = None
+        self._next = []
+        self._event_bus = None
         self.retry_policy = retry_policy
         self.error_handler = error_handler
-        self.status = AgentStatus.PENDING
-        self.execution_history: List[Dict[str, Any]] = []
+        self.status = AsyncAgentStatus.PENDING
+        self.execution_history = []
         self.enable_monitoring = enable_monitoring
         self.enable_persistence = enable_persistence
         self.state_manager = state_manager or get_default_state_manager()
-        self._custom_state: Dict[str, Any] = {}
+        self._custom_state = {}
 
-    def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute the agent's core logic.
-
-        This method must be implemented by subclasses to define the agent's behavior.
-
-        Args:
-            inputs: Dictionary of input data from previous agents or initial inputs
-
-        Returns:
-            Dictionary of output data to be passed to next agents
-
-        Raises:
-            NotImplementedError: This base implementation always raises this error
-        """
-        raise NotImplementedError("Subclasses must implement execute() method")
+    async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """Async execute method - must be implemented by subclasses."""
+        raise NotImplementedError
 
     def prepare(self, ledger: Dict[str, Any]) -> Dict[str, Any]:
-        """Prepare inputs for execution.
-
-        This method can be overridden to preprocess inputs before execution.
-
-        Args:
-            ledger: The current ledger state
-
-        Returns:
-            Processed inputs for the execute method
-        """
+        """Prepare method - kept synchronous for simplicity."""
         return ledger
 
     def next(self, *agents):
+        """Chain agents together."""
         self._next.extend(agents)
         return self
 
-    def run(self, ledger: Dict[str, Any]):
+    async def run(self, ledger: Dict[str, Any]):
+        """Async run method."""
         execution_id = self._get_execution_id()
-        self.status = AgentStatus.RUNNING
+        self.status = AsyncAgentStatus.RUNNING
         start_time = time.time()
         
         # Monitoring setup
@@ -147,11 +176,11 @@ class Agent(MonitoringMixin):
             with PerformanceProfiler(self.name, execution_id, logger, metrics_collector):
                 try:
                     if self.retry_policy:
-                        result = self._run_with_retry(ledger, execution_id)
+                        result = await self._run_with_retry(ledger, execution_id)
                     else:
-                        result = self._run_once(ledger, execution_id)
+                        result = await self._run_once(ledger, execution_id)
                     
-                    self.status = AgentStatus.SUCCESS
+                    self.status = AsyncAgentStatus.SUCCESS
                     execution_time = time.time() - start_time
                     
                     # Record metric
@@ -178,12 +207,16 @@ class Agent(MonitoringMixin):
                     
                     # Continue to next agents
                     for agent in self._next:
-                        agent.run(ledger)
+                        if isinstance(agent, AsyncAgent):
+                            await agent.run(ledger)
+                        else:
+                            # Fallback to sync agent
+                            agent.run(ledger)
                     
                     return ledger
                     
                 except Exception as e:
-                    self.status = AgentStatus.FAILED
+                    self.status = AsyncAgentStatus.FAILED
                     execution_time = time.time() - start_time
                     
                     # Record metric
@@ -205,7 +238,10 @@ class Agent(MonitoringMixin):
                     logger.log_agent_failure(self.name, execution_id, execution_time, e)
                     
                     if self.error_handler:
-                        self.error_handler(e, self, ledger)
+                        if asyncio.iscoroutinefunction(self.error_handler):
+                            await self.error_handler(e, self, ledger)
+                        else:
+                            self.error_handler(e, self, ledger)
                     else:
                         # Default error handling
                         error_info = {
@@ -216,16 +252,16 @@ class Agent(MonitoringMixin):
                         ledger.setdefault("_errors", []).append(error_info)
                     
                     # Re-raise the exception to stop the flow unless handled
-                    raise AgentError(f"Agent {self.name} failed: {str(e)}", self.name, e)
+                    raise AsyncAgentError(f"Agent {self.name} failed: {str(e)}", self.name, e)
         else:
             # Original behavior without monitoring
             try:
                 if self.retry_policy:
-                    result = self._run_with_retry(ledger)
+                    result = await self._run_with_retry(ledger)
                 else:
-                    result = self._run_once(ledger)
+                    result = await self._run_once(ledger)
                 
-                self.status = AgentStatus.SUCCESS
+                self.status = AsyncAgentStatus.SUCCESS
                 execution_time = time.time() - start_time
                 self.execution_history.append({
                     "status": "success",
@@ -235,12 +271,15 @@ class Agent(MonitoringMixin):
                 
                 # Continue to next agents
                 for agent in self._next:
-                    agent.run(ledger)
+                    if isinstance(agent, AsyncAgent):
+                        await agent.run(ledger)
+                    else:
+                        agent.run(ledger)
                 
                 return ledger
                 
             except Exception as e:
-                self.status = AgentStatus.FAILED
+                self.status = AsyncAgentStatus.FAILED
                 execution_time = time.time() - start_time
                 self.execution_history.append({
                     "status": "failed",
@@ -251,7 +290,10 @@ class Agent(MonitoringMixin):
                 })
                 
                 if self.error_handler:
-                    self.error_handler(e, self, ledger)
+                    if asyncio.iscoroutinefunction(self.error_handler):
+                        await self.error_handler(e, self, ledger)
+                    else:
+                        self.error_handler(e, self, ledger)
                 else:
                     # Default error handling
                     error_info = {
@@ -262,26 +304,28 @@ class Agent(MonitoringMixin):
                     ledger.setdefault("_errors", []).append(error_info)
                 
                 # Re-raise the exception to stop the flow unless handled
-                raise AgentError(f"Agent {self.name} failed: {str(e)}", self.name, e)
+                raise AsyncAgentError(f"Agent {self.name} failed: {str(e)}", self.name, e)
 
-    def _run_once(self, ledger: Dict[str, Any], execution_id: Optional[str] = None) -> Dict[str, Any]:
+    async def _run_once(self, ledger: Dict[str, Any], execution_id: Optional[str] = None) -> Dict[str, Any]:
+        """Run agent once without retry."""
         inputs = self.prepare(ledger)
-        outputs = self.execute(inputs)
+        outputs = await self.execute(inputs)
         ledger.update(outputs or {})
         return ledger
 
-    def _run_with_retry(self, ledger: Dict[str, Any], execution_id: Optional[str] = None) -> Dict[str, Any]:
+    async def _run_with_retry(self, ledger: Dict[str, Any], execution_id: Optional[str] = None) -> Dict[str, Any]:
+        """Run agent with retry logic."""
         last_exception = None
         logger = self.get_logger() if self.enable_monitoring and execution_id else None
         
         for attempt in range(1, self.retry_policy.max_attempts + 1):
             try:
                 if attempt > 1:
-                    self.status = AgentStatus.RETRYING
+                    self.status = AsyncAgentStatus.RETRYING
                     delay = self.retry_policy.delay * (self.retry_policy.backoff_factor ** (attempt - 2))
-                    time.sleep(delay)
+                    await asyncio.sleep(delay)
                 
-                return self._run_once(ledger, execution_id)
+                return await self._run_once(ledger, execution_id)
                 
             except self.retry_policy.exceptions as e:
                 last_exception = e
@@ -328,48 +372,20 @@ class Agent(MonitoringMixin):
         agent_state = self.state_manager.load_agent_state(self.name, execution_id)
         if agent_state:
             self.set_state(agent_state.custom_state)
-            # Restore ledger state if needed
             return True
         return False
-    
+
     @property
     def event_bus(self):
         if not self._event_bus:
+            from .core import EventBus
             self._event_bus = EventBus()
         return self._event_bus
-class CircuitBreaker:
-    def __init__(self, failure_threshold: int = 5, recovery_timeout: float = 60.0):
-        self.failure_threshold = failure_threshold
-        self.recovery_timeout = recovery_timeout
-        self.failure_count = 0
-        self.last_failure_time = None
-        self.state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
 
-    def call(self, func, *args, **kwargs):
-        if self.state == "OPEN":
-            if time.time() - self.last_failure_time > self.recovery_timeout:
-                self.state = "HALF_OPEN"
-            else:
-                raise AgentError("Circuit breaker is OPEN", "CircuitBreaker")
-        
-        try:
-            result = func(*args, **kwargs)
-            if self.state == "HALF_OPEN":
-                self.state = "CLOSED"
-                self.failure_count = 0
-            return result
-        except Exception as e:
-            self.failure_count += 1
-            self.last_failure_time = time.time()
-            
-            if self.failure_count >= self.failure_threshold:
-                self.state = "OPEN"
-            
-            raise e
 
-class AgentFlow(MonitoringMixin):
+class AsyncAgentFlow(MonitoringMixin):
     def __init__(self, start=None, error_handler: Optional[Callable] = None,
-                 circuit_breaker: Optional[CircuitBreaker] = None, enable_monitoring: bool = True,
+                 circuit_breaker: Optional[AsyncCircuitBreaker] = None, enable_monitoring: bool = True,
                  enable_persistence: bool = False, state_manager: Optional[StateManager] = None):
         self.start = start
         self.agents = set()
@@ -380,7 +396,8 @@ class AgentFlow(MonitoringMixin):
         self.enable_persistence = enable_persistence
         self.state_manager = state_manager or get_default_state_manager()
 
-    def run(self, ledger: Dict[str, Any]):
+    async def run(self, ledger: Dict[str, Any]):
+        """Async run method for the flow."""
         execution_id = str(int(time.time() * 1000))
         ledger.setdefault("_flow_execution_id", execution_id)
         start_time = time.time()
@@ -398,9 +415,9 @@ class AgentFlow(MonitoringMixin):
             with PerformanceProfiler(flow_id, execution_id, logger, metrics_collector):
                 try:
                     if self.circuit_breaker:
-                        result = self.circuit_breaker.call(self._execute_flow, ledger)
+                        result = await self.circuit_breaker.call(self._execute_flow, ledger)
                     else:
-                        result = self._execute_flow(ledger)
+                        result = await self._execute_flow(ledger)
                     
                     execution_time = time.time() - start_time
                     
@@ -411,6 +428,7 @@ class AgentFlow(MonitoringMixin):
                     total_retries = self._count_total_retries()
                     
                     # Record flow metric
+                    from .monitoring import FlowMetric
                     metric = FlowMetric(
                         flow_id=flow_id,
                         execution_id=execution_id,
@@ -446,6 +464,7 @@ class AgentFlow(MonitoringMixin):
                     execution_time = time.time() - start_time
                     
                     # Record flow metric
+                    from .monitoring import FlowMetric
                     metric = FlowMetric(
                         flow_id=flow_id,
                         execution_id=execution_id,
@@ -465,12 +484,15 @@ class AgentFlow(MonitoringMixin):
                     logger.log_flow_failure(flow_id, execution_id, execution_time, e)
                     
                     if self.error_handler:
-                        self.error_handler(e, self, ledger)
+                        if asyncio.iscoroutinefunction(self.error_handler):
+                            await self.error_handler(e, self, ledger)
+                        else:
+                            self.error_handler(e, self, ledger)
                     else:
                         # Default error handling
                         error_info = {
                             "error": str(e),
-                            "flow": "AgentFlow",
+                            "flow": "AsyncAgentFlow",
                             "traceback": traceback.format_exc(),
                             "flow_id": execution_id
                         }
@@ -491,9 +513,9 @@ class AgentFlow(MonitoringMixin):
             # Original behavior without monitoring
             try:
                 if self.circuit_breaker:
-                    result = self.circuit_breaker.call(self._execute_flow, ledger)
+                    result = await self.circuit_breaker.call(self._execute_flow, ledger)
                 else:
-                    result = self._execute_flow(ledger)
+                    result = await self._execute_flow(ledger)
                 
                 execution_time = time.time() - start_time
                 self.execution_history.append({
@@ -517,33 +539,34 @@ class AgentFlow(MonitoringMixin):
                 })
                 
                 if self.error_handler:
-                    self.error_handler(e, self, ledger)
-                else:
-                    # Default error handling
-                    error_info = {
-                        "error": str(e),
-                        "flow": "AgentFlow",
-                        "traceback": traceback.format_exc(),
-                        "flow_id": ledger["_flow_execution_id"]
-                    }
-                    ledger.setdefault("_errors", []).append(error_info)
+                    if asyncio.iscoroutinefunction(self.error_handler):
+                        await self.error_handler(e, self, ledger)
+                    else:
+                        self.error_handler(e, self, ledger)
                 
                 raise e
 
-    def _execute_flow(self, ledger: Dict[str, Any]):
+    async def _execute_flow(self, ledger: Dict[str, Any]):
+        """Execute the flow."""
         if self.start:
-            return self.start.run(ledger)
+            if isinstance(self.start, AsyncAgent):
+                return await self.start.run(ledger)
+            else:
+                return self.start.run(ledger)
         return ledger
 
-    def add_parallel_branch(self, agents: List[Agent]):
+    def add_parallel_branch(self, agents: List[AsyncAgent]):
+        """Add parallel branch of agents."""
         self.agents.update(agents)
         return self
 
-    def add_conditional_branch(self, name: str, agent: Agent):
+    def add_conditional_branch(self, name: str, agent: AsyncAgent):
+        """Add conditional branch."""
         setattr(self, f"cond_{name}", agent)
         return self
 
     def add_checkpoint(self, name: str, cond: Callable[[Dict[str, Any]], bool]):
+        """Add checkpoint."""
         setattr(self, f"chk_{name}", cond)
         return self
 
@@ -578,7 +601,7 @@ class AgentFlow(MonitoringMixin):
             agent = queue.pop(0)
             if agent not in visited:
                 visited.add(agent)
-                if hasattr(agent, 'status') and agent.status == AgentStatus.SUCCESS:
+                if hasattr(agent, 'status') and agent.status == AsyncAgentStatus.SUCCESS:
                     count += 1
                 queue.extend(agent._next)
         
@@ -604,6 +627,7 @@ class AgentFlow(MonitoringMixin):
         return total_retries
 
     def get_execution_summary(self) -> Dict[str, Any]:
+        """Get execution summary."""
         if not self.execution_history:
             return {"message": "No executions recorded"}
         
@@ -618,6 +642,14 @@ class AgentFlow(MonitoringMixin):
             "average_execution_time": sum(h.get("execution_time", 0) for h in self.execution_history) / total_executions
         }
     
+    def get_monitoring_summary(self) -> Dict[str, Any]:
+        """Get comprehensive monitoring summary including metrics."""
+        if not self.enable_monitoring:
+            return {"message": "Monitoring is disabled"}
+        
+        metrics_collector = self.get_metrics_collector()
+        return metrics_collector.get_performance_summary()
+
     def save_flow_state(self, ledger: Dict[str, Any], execution_id: str) -> bool:
         """Save flow state to persistent storage."""
         if not self.enable_persistence:
@@ -641,7 +673,7 @@ class AgentFlow(MonitoringMixin):
             return True
         return False
     
-    def _find_agent_by_name(self, name: str) -> Optional['Agent']:
+    def _find_agent_by_name(self, name: str) -> Optional[AsyncAgent]:
         """Find an agent in the flow by name."""
         if not self.start:
             return None
@@ -659,7 +691,7 @@ class AgentFlow(MonitoringMixin):
         
         return None
     
-    def resume_from_state(self, execution_id: str, ledger: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def resume_from_state(self, execution_id: str, ledger: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Resume flow execution from saved state."""
         if not self.load_flow_state(execution_id):
             raise ValueError(f"Could not load flow state for execution ID: {execution_id}")
@@ -672,45 +704,25 @@ class AgentFlow(MonitoringMixin):
         ledger["_flow_execution_id"] = execution_id
         
         # Resume execution
-        return self.run(ledger)
+        return await self.run(ledger)
 
-    def get_monitoring_summary(self) -> Dict[str, Any]:
-        """Get comprehensive monitoring summary including metrics."""
-        if not self.enable_monitoring:
-            return {"message": "Monitoring is disabled"}
-        
-        metrics_collector = self.get_metrics_collector()
-        return metrics_collector.get_performance_summary()
-class ManagerAgent(Agent):
-    def __init__(self, worker_pool=None, **kwargs):
-        super().__init__(**kwargs)
-        self.worker_pool = worker_pool or {}
-        self.tasks = []
 
-    def assign_task(self, name, data, priority=1):
-        self.tasks.append((priority, name, data))
+# Utility functions for running async flows
+async def run_async_flow(flow: AsyncAgentFlow, ledger: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Utility function to run an async flow."""
+    if ledger is None:
+        ledger = {}
+    return await flow.run(ledger)
 
-    def add_worker(self, name, worker):
-        self.worker_pool[name] = worker
 
-    def process_tasks(self, ledger):
-        for _, name, data in sorted(self.tasks, reverse=True):
-            if name in self.worker_pool:
-                self.worker_pool[name].run({**ledger, **data})
-class WorkerPool(dict): 
-    pass
-class EventBus:
-    def __init__(self):
-        self.subscribers = {}
-
-    def subscribe(self, event, agent):
-        self.subscribers.setdefault(event, []).append(agent)
-
-    def publish(self, event, data):
-        for agent in self.subscribers.get(event, []):
-            agent.run(data)
-            
-class EventAgent(Agent):
-    def publish(self, event, data):
-        if self.event_bus:
-            self.event_bus.publish(event, data)
+def create_async_flow(*agents, **kwargs) -> AsyncAgentFlow:
+    """Utility function to create an async flow from agents."""
+    if not agents:
+        raise ValueError("At least one agent is required")
+    
+    # Chain agents together
+    start_agent = agents[0]
+    for agent in agents[1:]:
+        start_agent.next(agent)
+    
+    return AsyncAgentFlow(start=start_agent, **kwargs)
