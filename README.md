@@ -1,4 +1,4 @@
-# Lyzr FireAnt 🐜🔥
+# Lyzr FireAnt
 
 A production-ready agent orchestration framework with enterprise-grade features.
 

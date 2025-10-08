@@ -1,6 +1,7 @@
 from setuptools import setup, find_packages
 
 def read_long_description():
+    """Read the long description from README.md."""
     with open("README.md", "r", encoding="utf-8") as f:
         return f.read()
 
@@ -13,8 +14,30 @@ setup(
     description="Production-ready agent orchestration framework with enterprise-grade features",
     long_description=read_long_description(),
     long_description_content_type="text/markdown",
+    url="https://github.com/sarankumar1325/FireAnt",
+    project_urls={
+        "Bug Reports": "https://github.com/sarankumar1325/FireAnt/issues",
+        "Source": "https://github.com/sarankumar1325/FireAnt",
+        "Documentation": "https://github.com/sarankumar1325/FireAnt#readme",
+    },
     packages=find_packages(),
     python_requires=">=3.8",
+    classifiers=[
+        "Development Status :: 4 - Beta",
+        "Intended Audience :: Developers",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: OS Independent",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Topic :: Software Development :: Libraries :: Python Modules",
+        "Topic :: System :: Distributed Computing",
+        "Framework :: AsyncIO",
+    ],
+    keywords="agent orchestration framework async monitoring persistence testing",
     install_requires=[
         # Core dependencies - minimal for basic functionality
         "typing-extensions>=4.0.0; python_version<'3.9'",

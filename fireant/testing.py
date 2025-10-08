@@ -1,11 +1,13 @@
 """
 FireAnt testing utilities.
-Provides testing helpers and utilities for agents and flows.
+
+This module provides comprehensive testing helpers and utilities for agents and flows,
+including mock agents, test harnesses, assertions, and performance profiling tools.
 """
 
 import asyncio
 import time
-from typing import Any, Dict, List, Optional, Union, Callable
+from typing import Any, Dict, List, Optional, Union, Callable, TYPE_CHECKING
 from unittest.mock import Mock, patch
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -17,10 +19,23 @@ from .async_core import AsyncAgent, AsyncAgentFlow
 from .monitoring import MetricsCollector, FireAntLogger
 from .persistence import MemoryStateStorage, StateManager
 
+if TYPE_CHECKING:
+    from .core import Agent as AgentType
+    from .async_core import AsyncAgent as AsyncAgentType
 
-@dataclass
+
+@dataclass(frozen=True)
 class TestResult:
-    """Result of a test execution."""
+    """Immutable result of a test execution.
+
+    Attributes:
+        success: Whether the test passed
+        execution_time: Time taken to execute the test in seconds
+        output: Output data produced by the agent/flow
+        error: Exception that occurred during execution (if any)
+        metrics: Performance metrics collected during execution
+        logs: Log messages generated during execution
+    """
     success: bool
     execution_time: float
     output: Dict[str, Any]
@@ -30,30 +45,62 @@ class TestResult:
 
 
 class MockAgent(Agent):
-    """Mock agent for testing purposes."""
-    
-    def __init__(self, name=None, output_data=None, delay=0, should_fail=False, 
-                 failure_message="Mock agent failed", enable_monitoring=False):
+    """Mock agent for testing purposes.
+
+    This agent allows controlled testing by providing predictable outputs,
+    configurable delays, and failure simulation.
+
+    Args:
+        name: Optional name for the mock agent
+        output_data: Data to return on successful execution
+        delay: Artificial delay in seconds before execution
+        should_fail: Whether the agent should raise an exception
+        failure_message: Message for the exception if should_fail is True
+        enable_monitoring: Whether to enable monitoring for this mock agent
+    """
+
+    def __init__(
+        self,
+        name: Optional[str] = None,
+        output_data: Optional[Dict[str, Any]] = None,
+        delay: float = 0,
+        should_fail: bool = False,
+        failure_message: str = "Mock agent failed",
+        enable_monitoring: bool = False
+    ) -> None:
         super().__init__(name=name, enable_monitoring=enable_monitoring)
         self.output_data = output_data or {"mock_output": True}
         self.delay = delay
         self.should_fail = should_fail
         self.failure_message = failure_message
         self.execute_count = 0
-    
-    def execute(self, inputs):
+
+    def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute the mock agent logic.
+
+        Args:
+            inputs: Input data (ignored by mock agent)
+
+        Returns:
+            Configured output data
+
+        Raises:
+            RuntimeError: If should_fail is True
+        """
         self.execute_count += 1
-        
+
         if self.delay > 0:
             time.sleep(self.delay)
-        
+
         if self.should_fail:
             raise RuntimeError(self.failure_message)
-        
+
         # Include input data in output for testing
         output = self.output_data.copy()
         output["input_received"] = bool(inputs)
         output["execute_count"] = self.execute_count
+
+        return output
         
         return output
 

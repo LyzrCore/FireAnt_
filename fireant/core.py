@@ -1,51 +1,128 @@
-from typing import Any, Callable, Dict, List, Optional, Union
+"""
+Core FireAnt agent orchestration framework.
+
+This module provides the fundamental building blocks for creating and managing
+agent-based workflows with support for chaining, error handling, and monitoring.
+"""
+
+from typing import Any, Callable, Dict, List, Optional, Union, Tuple
 import time
 import traceback
 from enum import Enum
 from .monitoring import MonitoringMixin, FireAntLogger, MetricsCollector, AgentMetric, FlowMetric, PerformanceProfiler
 from .persistence import StateManager, get_default_state_manager
 
+
 class AgentStatus(Enum):
+    """Enumeration of possible agent execution states."""
     PENDING = "pending"
     RUNNING = "running"
     SUCCESS = "success"
     FAILED = "failed"
     RETRYING = "retrying"
 
+
 class AgentError(Exception):
-    def __init__(self, message: str, agent_name: str, original_error: Exception = None):
+    """Custom exception for agent-related errors.
+
+    Args:
+        message: Error message describing what went wrong
+        agent_name: Name of the agent that caused the error
+        original_error: The original exception that was caught (optional)
+    """
+
+    def __init__(self, message: str, agent_name: str, original_error: Optional[Exception] = None) -> None:
         super().__init__(message)
         self.agent_name = agent_name
         self.original_error = original_error
 
+
 class RetryPolicy:
-    def __init__(self, max_attempts: int = 3, delay: float = 1.0, backoff_factor: float = 2.0,
-                 exceptions: tuple = (Exception,)):
+    """Configuration for retry behavior in case of failures.
+
+    Args:
+        max_attempts: Maximum number of retry attempts (default: 3)
+        delay: Initial delay between retries in seconds (default: 1.0)
+        backoff_factor: Factor by which delay increases after each retry (default: 2.0)
+        exceptions: Tuple of exception types that should trigger retries (default: (Exception,))
+    """
+
+    def __init__(
+        self,
+        max_attempts: int = 3,
+        delay: float = 1.0,
+        backoff_factor: float = 2.0,
+        exceptions: Tuple[type, ...] = (Exception,)
+    ) -> None:
         self.max_attempts = max_attempts
         self.delay = delay
         self.backoff_factor = backoff_factor
         self.exceptions = exceptions
 
+
 class Agent(MonitoringMixin):
-    def __init__(self, name=None, retry_policy: Optional[RetryPolicy] = None,
-                 error_handler: Optional[Callable] = None, enable_monitoring: bool = True,
-                 enable_persistence: bool = False, state_manager: Optional[StateManager] = None):
+    """Base class for all FireAnt agents.
+
+    Agents are the fundamental units of work in FireAnt. They process inputs
+    and produce outputs, with support for chaining, error handling, and monitoring.
+
+    Args:
+        name: Optional name for the agent (defaults to class name)
+        retry_policy: Configuration for retry behavior on failures
+        error_handler: Custom error handling function
+        enable_monitoring: Whether to enable performance monitoring
+        enable_persistence: Whether to enable state persistence
+        state_manager: Custom state manager instance
+    """
+
+    def __init__(
+        self,
+        name: Optional[str] = None,
+        retry_policy: Optional[RetryPolicy] = None,
+        error_handler: Optional[Callable[[Exception, 'Agent', Dict[str, Any]], None]] = None,
+        enable_monitoring: bool = True,
+        enable_persistence: bool = False,
+        state_manager: Optional[StateManager] = None
+    ) -> None:
         self.name = name or self.__class__.__name__
-        self._next = []
-        self._event_bus = None
+        self._next: List['Agent'] = []
+        self._event_bus: Optional['EventBus'] = None
         self.retry_policy = retry_policy
         self.error_handler = error_handler
         self.status = AgentStatus.PENDING
-        self.execution_history = []
+        self.execution_history: List[Dict[str, Any]] = []
         self.enable_monitoring = enable_monitoring
         self.enable_persistence = enable_persistence
         self.state_manager = state_manager or get_default_state_manager()
-        self._custom_state = {}
+        self._custom_state: Dict[str, Any] = {}
 
     def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        raise NotImplementedError
+        """Execute the agent's core logic.
+
+        This method must be implemented by subclasses to define the agent's behavior.
+
+        Args:
+            inputs: Dictionary of input data from previous agents or initial inputs
+
+        Returns:
+            Dictionary of output data to be passed to next agents
+
+        Raises:
+            NotImplementedError: This base implementation always raises this error
+        """
+        raise NotImplementedError("Subclasses must implement execute() method")
 
     def prepare(self, ledger: Dict[str, Any]) -> Dict[str, Any]:
+        """Prepare inputs for execution.
+
+        This method can be overridden to preprocess inputs before execution.
+
+        Args:
+            ledger: The current ledger state
+
+        Returns:
+            Processed inputs for the execute method
+        """
         return ledger
 
     def next(self, *agents):

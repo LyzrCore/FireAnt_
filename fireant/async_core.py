@@ -1,18 +1,25 @@
 """
 FireAnt async core module.
-Provides async versions of Agent and AgentFlow for better performance with I/O-bound operations.
+
+This module provides asynchronous versions of Agent and AgentFlow for improved
+performance with I/O-bound operations. It includes concurrent execution,
+async retry policies, and circuit breaker patterns.
 """
 
 import asyncio
 import time
 import traceback
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union, Tuple, TYPE_CHECKING
 from enum import Enum
 from .monitoring import MonitoringMixin, FireAntLogger, MetricsCollector, AgentMetric, FlowMetric, PerformanceProfiler
 from .persistence import StateManager, get_default_state_manager
 
+if TYPE_CHECKING:
+    from .core import EventBus
+
 
 class AsyncAgentStatus(Enum):
+    """Enumeration of possible async agent execution states."""
     PENDING = "pending"
     RUNNING = "running"
     SUCCESS = "success"
@@ -21,15 +28,37 @@ class AsyncAgentStatus(Enum):
 
 
 class AsyncAgentError(Exception):
-    def __init__(self, message: str, agent_name: str, original_error: Exception = None):
+    """Custom exception for async agent-related errors.
+
+    Args:
+        message: Error message describing what went wrong
+        agent_name: Name of the agent that caused the error
+        original_error: The original exception that was caught (optional)
+    """
+
+    def __init__(self, message: str, agent_name: str, original_error: Optional[Exception] = None) -> None:
         super().__init__(message)
         self.agent_name = agent_name
         self.original_error = original_error
 
 
 class AsyncRetryPolicy:
-    def __init__(self, max_attempts: int = 3, delay: float = 1.0, backoff_factor: float = 2.0,
-                 exceptions: tuple = (Exception,)):
+    """Configuration for async retry behavior in case of failures.
+
+    Args:
+        max_attempts: Maximum number of retry attempts (default: 3)
+        delay: Initial delay between retries in seconds (default: 1.0)
+        backoff_factor: Factor by which delay increases after each retry (default: 2.0)
+        exceptions: Tuple of exception types that should trigger retries (default: (Exception,))
+    """
+
+    def __init__(
+        self,
+        max_attempts: int = 3,
+        delay: float = 1.0,
+        backoff_factor: float = 2.0,
+        exceptions: Tuple[type, ...] = (Exception,)
+    ) -> None:
         self.max_attempts = max_attempts
         self.delay = delay
         self.backoff_factor = backoff_factor
@@ -37,28 +66,54 @@ class AsyncRetryPolicy:
 
 
 class AsyncCircuitBreaker:
-    def __init__(self, failure_threshold: int = 5, recovery_timeout: float = 60.0):
+    """Circuit breaker for async operations to prevent cascade failures.
+
+    The circuit breaker has three states:
+    - CLOSED: Normal operation, requests pass through
+    - OPEN: Failure threshold exceeded, requests are blocked
+    - HALF_OPEN: Testing if service has recovered
+
+    Args:
+        failure_threshold: Number of failures before opening circuit (default: 5)
+        recovery_timeout: Time in seconds to wait before trying recovery (default: 60.0)
+    """
+
+    def __init__(self, failure_threshold: int = 5, recovery_timeout: float = 60.0) -> None:
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.failure_count = 0
-        self.last_failure_time = None
+        self.last_failure_time: Optional[float] = None
         self.state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
         self._lock = asyncio.Lock()
 
-    async def call(self, func, *args, **kwargs):
+    async def call(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
+        """Execute function through circuit breaker.
+
+        Args:
+            func: The async function to execute
+            *args: Positional arguments for the function
+            **kwargs: Keyword arguments for the function
+
+        Returns:
+            The result of the function call
+
+        Raises:
+            AsyncAgentError: If circuit is OPEN
+            Original exception: If function fails
+        """
         async with self._lock:
             if self.state == "OPEN":
-                if time.time() - self.last_failure_time > self.recovery_timeout:
+                if time.time() - (self.last_failure_time or 0) > self.recovery_timeout:
                     self.state = "HALF_OPEN"
                 else:
                     raise AsyncAgentError("Circuit breaker is OPEN", "AsyncCircuitBreaker")
-            
+
             try:
                 if asyncio.iscoroutinefunction(func):
                     result = await func(*args, **kwargs)
                 else:
                     result = func(*args, **kwargs)
-                
+
                 if self.state == "HALF_OPEN":
                     self.state = "CLOSED"
                     self.failure_count = 0
@@ -66,10 +121,10 @@ class AsyncCircuitBreaker:
             except Exception as e:
                 self.failure_count += 1
                 self.last_failure_time = time.time()
-                
+
                 if self.failure_count >= self.failure_threshold:
                     self.state = "OPEN"
-                
+
                 raise e
 
 

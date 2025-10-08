@@ -1,19 +1,26 @@
 """
 FireAnt monitoring and logging capabilities.
-Provides comprehensive logging, metrics collection, and performance monitoring for agents.
+
+This module provides comprehensive logging, metrics collection, and performance
+monitoring for agents and flows. It includes structured logging, performance
+profiling, and metrics aggregation with thread-safe operations.
 """
 
 import logging
 import time
 import json
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 from collections import defaultdict, deque
 from dataclasses import dataclass, asdict
 from enum import Enum
 import threading
 
+if TYPE_CHECKING:
+    from .core import Agent, AgentFlow
+
 
 class LogLevel(Enum):
+    """Enumeration of available logging levels."""
     DEBUG = "DEBUG"
     INFO = "INFO"
     WARNING = "WARNING"
@@ -21,9 +28,23 @@ class LogLevel(Enum):
     CRITICAL = "CRITICAL"
 
 
-@dataclass
+@dataclass(frozen=True)
 class AgentMetric:
-    """Metric data for agent execution."""
+    """Immutable metric data for agent execution.
+
+    Attributes:
+        agent_name: Name of the agent that was executed
+        execution_id: Unique identifier for this execution
+        status: Final status of the execution ('success' or 'failed')
+        start_time: Unix timestamp when execution started
+        end_time: Unix timestamp when execution completed
+        execution_time: Total execution time in seconds
+        input_size: Size of input data (approximate)
+        output_size: Size of output data (approximate)
+        error_message: Error message if execution failed
+        retry_count: Number of retry attempts made
+        memory_usage: Memory usage during execution (if available)
+    """
     agent_name: str
     execution_id: str
     status: str
@@ -37,9 +58,22 @@ class AgentMetric:
     memory_usage: Optional[float] = None
 
 
-@dataclass
+@dataclass(frozen=True)
 class FlowMetric:
-    """Metric data for flow execution."""
+    """Immutable metric data for flow execution.
+
+    Attributes:
+        flow_id: Unique identifier for the flow
+        execution_id: Unique identifier for this execution
+        status: Final status of the flow execution
+        start_time: Unix timestamp when flow started
+        end_time: Unix timestamp when flow completed
+        execution_time: Total execution time in seconds
+        agent_count: Total number of agents in the flow
+        successful_agents: Number of agents that completed successfully
+        failed_agents: Number of agents that failed
+        total_retries: Total number of retry attempts across all agents
+    """
     flow_id: str
     execution_id: str
     status: str
@@ -53,21 +87,36 @@ class FlowMetric:
 
 
 class MetricsCollector:
-    """Collects and stores metrics for agents and flows."""
-    
-    def __init__(self, max_history: int = 1000):
+    """Thread-safe metrics collector for agents and flows.
+
+    This class provides efficient storage and retrieval of performance metrics
+    with automatic history management and thread-safe operations.
+
+    Args:
+        max_history: Maximum number of metrics to keep in memory (default: 1000)
+    """
+
+    def __init__(self, max_history: int = 1000) -> None:
         self.max_history = max_history
-        self.agent_metrics: deque = deque(maxlen=max_history)
-        self.flow_metrics: deque = deque(maxlen=max_history)
-        self._lock = threading.Lock()
-    
-    def record_agent_metric(self, metric: AgentMetric):
-        """Record an agent execution metric."""
+        self.agent_metrics: deque[AgentMetric] = deque(maxlen=max_history)
+        self.flow_metrics: deque[FlowMetric] = deque(maxlen=max_history)
+        self._lock = threading.RLock()  # Reentrant lock for better performance
+
+    def record_agent_metric(self, metric: AgentMetric) -> None:
+        """Record an agent execution metric.
+
+        Args:
+            metric: The agent metric to record
+        """
         with self._lock:
             self.agent_metrics.append(metric)
-    
-    def record_flow_metric(self, metric: FlowMetric):
-        """Record a flow execution metric."""
+
+    def record_flow_metric(self, metric: FlowMetric) -> None:
+        """Record a flow execution metric.
+
+        Args:
+            metric: The flow metric to record
+        """
         with self._lock:
             self.flow_metrics.append(metric)
     

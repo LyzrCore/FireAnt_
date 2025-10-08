@@ -1,15 +1,21 @@
 """
 FireAnt configuration management.
-Provides centralized configuration management for agents and flows.
+
+This module provides centralized configuration management for agents and flows,
+supporting multiple sources (files, environment variables, programmatic) with
+validation and hot reloading capabilities.
 """
 
 import os
 import json
 import yaml
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from enum import Enum
+
+if TYPE_CHECKING:
+    from .core import Agent, AgentFlow
 
 
 class ConfigFormat(Enum):
@@ -21,23 +27,43 @@ class ConfigFormat(Enum):
 
 @dataclass
 class RetryConfig:
-    """Configuration for retry policies."""
+    """Configuration for retry policies.
+
+    Attributes:
+        max_attempts: Maximum number of retry attempts
+        delay: Initial delay between retries in seconds
+        backoff_factor: Factor by which delay increases after each retry
+        exceptions: Tuple of exception types that should trigger retries
+    """
     max_attempts: int = 3
     delay: float = 1.0
     backoff_factor: float = 2.0
-    exceptions: tuple = (Exception,)
+    exceptions: tuple[type, ...] = (Exception,)
 
 
 @dataclass
 class CircuitBreakerConfig:
-    """Configuration for circuit breakers."""
+    """Configuration for circuit breakers.
+
+    Attributes:
+        failure_threshold: Number of failures before opening circuit
+        recovery_timeout: Time in seconds to wait before trying recovery
+    """
     failure_threshold: int = 5
     recovery_timeout: float = 60.0
 
 
 @dataclass
 class MonitoringConfig:
-    """Configuration for monitoring."""
+    """Configuration for monitoring and logging.
+
+    Attributes:
+        enabled: Whether monitoring is enabled
+        log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        log_file: Optional file path for logging output
+        metrics_history_size: Maximum number of metrics to keep in memory
+        enable_performance_profiling: Whether to enable performance profiling
+    """
     enabled: bool = True
     log_level: str = "INFO"
     log_file: Optional[str] = None
@@ -47,7 +73,24 @@ class MonitoringConfig:
 
 @dataclass
 class PersistenceConfig:
-    """Configuration for persistence."""
+    """Configuration for state persistence.
+
+    Attributes:
+        enabled: Whether persistence is enabled
+        storage_type: Type of storage ('file', 'memory', 'database')
+        storage_dir: Directory for file-based storage
+        serializer: Serialization format ('json', 'pickle')
+        auto_save: Whether to automatically save state
+        cleanup_old_states: Whether to clean up old state files
+        max_state_age_hours: Maximum age of state files in hours
+    """
+    enabled: bool = False
+    storage_type: str = "file"
+    storage_dir: str = "fireant_states"
+    serializer: str = "json"
+    auto_save: bool = True
+    cleanup_old_states: bool = True
+    max_state_age_hours: int = 24
     enabled: bool = False
     storage_type: str = "file"  # file, memory, database
     storage_dir: str = "fireant_states"
